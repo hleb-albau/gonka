@@ -29,7 +29,7 @@ import (
 
 // NewRootCmd creates a new root command for inferenced. It is called once in the main function.
 func NewRootCmd() *cobra.Command {
-	initSDKConfig()
+	app.InitSDKConfig()
 
 	var (
 		txConfigOpts       tx.ConfigOptions

@@ -145,8 +145,8 @@ func (AppModule) GenerateGenesisState(simState *module.SimulationState) {
 		accs[i] = acc.Address.String()
 	}
 	inferenceGenesis := types.GenesisState{
-		Params: types.DefaultParams(),
-		// this line is used by starport scaffolding # simapp/module/genesisState
+		Params:            types.DefaultParams(),
+		GenesisOnlyParams: types.DefaultGenesisOnlyParams(),
 	}
 	simState.GenState[types.ModuleName] = simState.Cdc.MustMarshalJSON(&inferenceGenesis) //nolint:forbidigo // Simulation code
 }

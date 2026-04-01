@@ -1,4 +1,4 @@
-.PHONY: release decentralized-api-release inference-chain-release tmkms-release proxy-release proxy-ssl-release bridge-release check-docker build-testermint run-blockchain-tests test-blockchain local-build api-local-build node-local-build api-test node-test mock-server-build-docker proxy-build-docker proxy-ssl-build-docker bridge-build-docker run-bls-tests subnetctl-build
+.PHONY: release decentralized-api-release inference-chain-release tmkms-release proxy-release proxy-ssl-release bridge-release check-docker build-testermint local-build api-local-build node-local-build api-test node-test mock-server-build-docker proxy-build-docker proxy-ssl-build-docker bridge-build-docker run-bls-tests subnetctl-build node-sim-smoke-test node-sim-full-test
 
 VERSION ?= $(shell git describe --always)
 TAG_NAME := "release/v$(VERSION)"
@@ -80,7 +80,6 @@ run-bls-tests: check-docker
 	@echo "Running BLS DKG integration tests (requires Docker)..."
 	@cd testermint && ./gradlew test --tests "BLSDKGSuccessTest"
 
-test-blockchain: check-docker run-blockchain-tests
 
 # Local build targets
 api-local-build:
@@ -134,6 +133,18 @@ node-test:
 	@if [ $$(grep -c "FAIL:" node-test-output.log) -gt 0 ]; then \
 		exit 1; \
 	fi
+
+
+node-sim-smoke-test:
+	@echo "Running simulation smoke test (50 blocks × 20 ops)..."
+	@cd inference-chain && go test -tags sims -run TestFullAppSimulation -v -timeout 15m ./app \
+		-NumBlocks=50 -BlockSize=20
+
+node-sim-full-test:
+	@echo "Running full simulation (500 blocks × 200 ops)..."
+	@cd inference-chain && go test -tags sims -run TestFullAppSimulation -v -timeout 120m ./app
+
+
 
 local-build: api-local-build node-local-build api-test node-test
 	@echo "=========================================="

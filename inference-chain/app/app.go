@@ -20,7 +20,6 @@ import (
 	_ "cosmossdk.io/x/nft/module" // import for side-effects
 	_ "cosmossdk.io/x/upgrade"    // import for side-effects
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
-
 	"github.com/cometbft/cometbft/proto/tendermint/types"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
@@ -34,13 +33,10 @@ import (
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/cosmos/cosmos-sdk/x/auth"
 	_ "github.com/cosmos/cosmos-sdk/x/auth" // import for side-effects
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
-	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
 	_ "github.com/cosmos/cosmos-sdk/x/auth/tx/config" // import for side-effects
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	_ "github.com/cosmos/cosmos-sdk/x/auth/vesting" // import for side-effects
+	_ "github.com/cosmos/cosmos-sdk/x/auth/vesting"   // import for side-effects
 	authzkeeper "github.com/cosmos/cosmos-sdk/x/authz/keeper"
 	_ "github.com/cosmos/cosmos-sdk/x/authz/module" // import for side-effects
 	_ "github.com/cosmos/cosmos-sdk/x/bank"         // import for side-effects
@@ -51,6 +47,7 @@ import (
 	crisiskeeper "github.com/cosmos/cosmos-sdk/x/crisis/keeper"
 	_ "github.com/cosmos/cosmos-sdk/x/distribution" // import for side-effects
 	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
+	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	"github.com/cosmos/cosmos-sdk/x/gov"
@@ -69,6 +66,7 @@ import (
 	slashingkeeper "github.com/cosmos/cosmos-sdk/x/slashing/keeper"
 	_ "github.com/cosmos/cosmos-sdk/x/staking" // import for side-effects
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	_ "github.com/cosmos/ibc-go/modules/capability" // import for side-effects
 	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
@@ -316,13 +314,22 @@ func New(
 
 	app.ModuleManager.RegisterInvariants(app.CrisisKeeper)
 
-	// create the simulation manager and define the order of the modules for deterministic simulations
-	//
-	// NOTE: this is not required apps that don't use the simulator for fuzz testing transactions
-	overrideModules := map[string]module.AppModuleSimulation{
-		authtypes.ModuleName: auth.NewAppModule(app.appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName)),
-	}
-	app.sm = module.NewSimulationManagerFromAppModules(app.ModuleManager.Modules, overrideModules)
+	stakingSimMod, _ := app.ModuleManager.Modules[stakingtypes.ModuleName].(module.AppModuleSimulation)
+	distrSimMod, _ := app.ModuleManager.Modules[distrtypes.ModuleName].(module.AppModuleSimulation)
+	wasmSimMod, _ := app.ModuleManager.Modules[wasmtypes.ModuleName].(module.AppModuleSimulation)
+	app.sm = module.NewSimulationManagerFromAppModules(app.ModuleManager.Modules, map[string]module.AppModuleSimulation{
+		// Staking delegation/undelegation and distribution reward msgs are disabled in
+		// this PoC chain; keep genesis state generation but suppress all sim operations.
+		// todo update simulations packages of cosmos sdk fork for modules below
+		stakingtypes.ModuleName: disabledOpsSimModule{stakingSimMod},
+		distrtypes.ModuleName:   disabledOpsSimModule{distrSimMod},
+		// wasmd v0.54.2's BuildOperationInput creates a bare InterfaceRegistry
+		// (with failingAddressCodec) rather than using the app's codec, so all wasm
+		// simulation operations fail with "InterfaceRegistry requires a proper address
+		// codec implementation". Disable wasm sim ops until upstream fixes this(fixed in v0.60.0+).
+		// see https://github.com/CosmWasm/wasmd/pull/2250/changes/3eab200e5c58794d20d607e33db76610f5baafa5
+		wasmtypes.ModuleName: disabledOpsSimModule{wasmSimMod},
+	})
 	app.sm.RegisterStoreDecoders()
 
 	app.setAnteHandler(app.txConfig, nodeConfig, app.GetKey(wasmtypes.StoreKey))
@@ -425,6 +432,10 @@ func (app *App) GetCapabilityScopedKeeper(moduleName string) capabilitykeeper.Sc
 // SimulationManager implements the SimulationApp interface.
 func (app *App) SimulationManager() *module.SimulationManager {
 	return app.sm
+}
+
+func (app *App) TxConfig() client.TxConfig {
+	return app.txConfig
 }
 
 // RegisterAPIRoutes registers all application module routes with the provided
